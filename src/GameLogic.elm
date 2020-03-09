@@ -67,7 +67,7 @@ calculateScore player =
         calculateScoreFromRoute route =
             case route of
                 [] ->
-                                         0
+                    0
 
                 [ Speed speed ] ->
                     speed
@@ -95,7 +95,7 @@ calculateScore player =
                 (Speed speed) :: ServiceStation :: ServiceStation :: _ ->
                     speed
 
-                (Speed speed) :: ServiceStation  :: _ ->
+                (Speed speed) :: ServiceStation :: _ ->
                     speed
 
                 (Speed speed) :: Minus50 :: _ ->
