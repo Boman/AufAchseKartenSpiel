@@ -67,7 +67,7 @@ calculateScore player =
         calculateScoreFromRoute route =
             case route of
                 [] ->
-                    0
+                                         0
 
                 [ Speed speed ] ->
                     speed
@@ -95,6 +95,9 @@ calculateScore player =
                 (Speed speed) :: ServiceStation :: ServiceStation :: _ ->
                     speed
 
+                (Speed speed) :: ServiceStation  :: _ ->
+                    speed
+
                 (Speed speed) :: Minus50 :: _ ->
                     speed
 
@@ -104,7 +107,13 @@ calculateScore player =
                 (Speed speed) :: (DrawCard _) :: _ ->
                     speed
 
-                _ ->
+                Minus50 :: _ ->
+                    0
+
+                (DrawCard _) :: _ ->
+                    0
+
+                Discard :: _ ->
                     0
     in
     { player | score = player.score + calculateScoreFromRoute (player.route |> Array.toList |> List.reverse) }
