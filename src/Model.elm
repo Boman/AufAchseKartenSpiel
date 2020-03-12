@@ -1,10 +1,10 @@
 module Model exposing (..)
 
 import Array exposing (Array)
-import Array.Extra
 import Bool.Extra
 import Maybe.Extra
 import Random exposing (Seed)
+import Time exposing (Posix)
 
 
 type alias Model =
@@ -18,7 +18,7 @@ type GameState
 
 
 type alias StartInfo =
-    { players : List String }
+    { players : List ( String, Bool ) }
 
 
 type alias GameInfo =
@@ -49,6 +49,7 @@ type alias Player =
     , route : Array Card
     , selectedHandCardIndex : Maybe Int
     , cardsToRoute : Array Card
+    , ai : Maybe Seed
     }
 
 
@@ -62,6 +63,7 @@ type Card
 
 type Msg
     = NameChanged Int String
+    | SetPlayerAI Int Bool
     | RemovePlayer Int
     | AddPlayer
     | StartGame StartInfo
@@ -76,6 +78,7 @@ type Msg
     | RevealSharedPileCardClicked
     | NextStageClicked
     | EndGameClicked
+    | Tick Posix
 
 
 updateStartInfo : (StartInfo -> StartInfo) -> Model -> Model
@@ -98,60 +101,14 @@ updateGameInfo updateFunction model =
             model
 
 
-updateGameStageState : (RoundState -> RoundState) -> Model -> Model
-updateGameStageState updateFunction model =
-    case model.gameState of
-        Play gameInfo ->
-            { model | gameState = Play { gameInfo | roundState = updateFunction gameInfo.roundState } }
-
-        _ ->
-            model
-
-
-updatePlayer : Int -> (Player -> Player) -> Model -> Model
-updatePlayer playerIndex updateFunction model =
+updatePlayerInModel : Int -> (Player -> Player) -> Model -> Model
+updatePlayerInModel playerIndex updateFunction model =
     updateGameInfo (\gameInfo -> { gameInfo | players = Array.indexedMap (\index player -> Bool.Extra.ifElse (updateFunction player) player (index == playerIndex)) gameInfo.players }) model
 
 
 updatePlayerInPlayers : Int -> (Player -> Player) -> Array Player -> Array Player
 updatePlayerInPlayers playerIndex updateFunction players =
     Array.indexedMap (\index player -> Bool.Extra.ifElse (updateFunction player) player (index == playerIndex)) players
-
-
-addCardToPlayersHand : Int -> Maybe Card -> Array Player -> Array Player
-addCardToPlayersHand playerIndex card players =
-    case card of
-        Just card2 ->
-            Array.indexedMap
-                (\playerIndex2 player ->
-                    if playerIndex == playerIndex2 then
-                        { player | hand = Array.push card2 player.hand }
-
-                    else
-                        player
-                )
-                players
-
-        Nothing ->
-            players
-
-
-addCardToPlayersRoute : Int -> Maybe Card -> Array Player -> Array Player
-addCardToPlayersRoute playerIndex card players =
-    case card of
-        Just card2 ->
-            Array.indexedMap
-                (\playerIndex2 player ->
-                    if playerIndex == playerIndex2 then
-                        { player | route = Array.push card2 player.route }
-
-                    else
-                        player
-                )
-                players
-
-        Nothing ->
-            players
 
 
 getSelectedCardFromPlayersHand : Int -> Array Player -> Maybe Card
@@ -161,22 +118,3 @@ getSelectedCardFromPlayersHand playerIndex players =
             Array.get playerIndex players
     in
     Maybe.Extra.join <| Maybe.map (\player -> Maybe.Extra.unwrap Nothing (\selectedHandCardIndex -> Array.get selectedHandCardIndex player.hand) player.selectedHandCardIndex) currentPlayer
-
-
-getCardFromPlayersHand : Int -> Int -> Array Player -> Maybe Card
-getCardFromPlayersHand playerIndex cardIndex players =
-    let
-        currentPlayer =
-            Array.get playerIndex players
-    in
-    Maybe.Extra.join <| Maybe.map (\player -> Array.get cardIndex player.hand) currentPlayer
-
-
-removeCardFromPlayersHand : Int -> Int -> Array Player -> Array Player
-removeCardFromPlayersHand playerIndex cardIndex players =
-    case Array.get playerIndex players of
-        Just a ->
-            Array.set playerIndex { a | hand = Array.Extra.removeAt cardIndex a.hand } players
-
-        Nothing ->
-            players

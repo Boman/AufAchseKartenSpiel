@@ -10,10 +10,12 @@ viewStartInfo : StartInfo -> Html Msg
 viewStartInfo startInfo =
     let
         mapPlayersToInput =
-            \index name ->
+            \index ( name, isAI ) ->
                 div []
                     [ text (String.fromInt (index + 1) ++ ". Player Name: ")
                     , input [ value name, onInput <| NameChanged index ] []
+                    , input [ type_ "checkbox", onClick (SetPlayerAI index (not isAI)), checked isAI ] []
+                    , text "is AI opponent"
                     , button [ onClick (RemovePlayer index) ] [ text "Remove Player" ]
                     ]
     in

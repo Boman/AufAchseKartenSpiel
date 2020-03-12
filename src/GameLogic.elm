@@ -1,6 +1,8 @@
 module GameLogic exposing (..)
 
 import Array exposing (Array)
+import Array.Extra
+import Bool.Extra
 import Maybe.Extra
 import Model exposing (..)
 import Random exposing (Seed)
@@ -25,24 +27,67 @@ isLastPlayerInRound gameInfo =
             False
 
 
-endTurn : Int -> GameInfo -> GameInfo
-endTurn playerIndex gameInfo =
-    { gameInfo
-        | roundState = NextPlayerInTurn (modBy (Array.length gameInfo.players) (playerIndex + 1))
-        , players =
-            updatePlayerInPlayers playerIndex
-                (\player2 ->
-                    { player2
-                        | route = Array.append player2.route player2.cardsToRoute
-                        , selectedHandCardIndex = Nothing
-                        , cardsToRoute = Array.empty
-                    }
-                )
-                gameInfo.players
-        , sharedPile =
-            Array.append gameInfo.sharedPile (Maybe.Extra.toArray gameInfo.sharedPileCard)
-        , sharedPileCard = Nothing
-    }
+endTurn : GameInfo -> GameInfo
+endTurn gameInfo =
+    let
+        newGameInfo playerIndex =
+            { gameInfo
+                | roundState = NextPlayerInTurn (modBy (Array.length gameInfo.players) (playerIndex + 1))
+                , players =
+                    updatePlayerInPlayers playerIndex
+                        (\player2 ->
+                            { player2
+                                | route = Array.append player2.route player2.cardsToRoute
+                                , selectedHandCardIndex = Nothing
+                                , cardsToRoute = Array.empty
+                            }
+                        )
+                        gameInfo.players
+                , sharedPile =
+                    Array.append gameInfo.sharedPile (Maybe.Extra.toArray gameInfo.sharedPileCard)
+                , sharedPileCard = Nothing
+            }
+
+        newGameInfoSharedPileCard playerIndex =
+            { gameInfo
+                | roundState =
+                    if isLastPlayerInRound gameInfo then
+                        RevealSharedPileCard
+
+                    else
+                        RevealSharedPileCardNextPlayerInTurn (modBy (Array.length gameInfo.players) (playerIndex + 1))
+                , players =
+                    updatePlayerInPlayers playerIndex
+                        (\player2 ->
+                            { player2
+                                | route = Array.append player2.route player2.cardsToRoute
+                                , selectedHandCardIndex = Nothing
+                                , cardsToRoute = Array.empty
+                            }
+                        )
+                        gameInfo.players
+            }
+    in
+    case gameInfo.roundState of
+        NextPlayerInTurn playerIndex ->
+            if isLastPlayerInRound gameInfo then
+                startRoundEnd (newGameInfo playerIndex)
+
+            else
+                newGameInfo playerIndex
+
+        PlayerInTurn playerIndex ->
+            if isLastPlayerInRound gameInfo then
+                startRoundEnd (newGameInfo playerIndex)
+
+            else
+                newGameInfo playerIndex
+
+        RevealSharedPileCardPlayerInTurn playerIndex ->
+            newGameInfoSharedPileCard playerIndex
+
+        _ ->
+            gameInfo
 
 
 startRoundEnd : GameInfo -> GameInfo
@@ -144,6 +189,156 @@ endGame model =
             model
 
 
+makeAIturn : Model -> Model
+makeAIturn model =
+    let
+        isAI : GameInfo -> Int -> Bool
+        isAI gameInfo playerIndex =
+            Array.get playerIndex gameInfo.players
+                |> Maybe.Extra.unwrap False (\player -> Maybe.Extra.isJust player.ai)
+
+        isAIinTurn : GameInfo -> Bool
+        isAIinTurn gameInfo =
+            case gameInfo.roundState of
+                NextPlayerInTurn playerIndex ->
+                    isAI gameInfo playerIndex
+
+                PlayerInTurn playerIndex ->
+                    isAI gameInfo playerIndex
+
+                RevealSharedPileCardNextPlayerInTurn playerIndex ->
+                    isAI gameInfo playerIndex
+
+                RevealSharedPileCardPlayerInTurn playerIndex ->
+                    isAI gameInfo playerIndex
+
+                _ ->
+                    False
+    in
+    case model.gameState of
+        Play gameInfo ->
+            if isAIinTurn gameInfo then
+                executeAI gameInfo |> Play |> Model
+
+            else
+                model
+
+        _ ->
+            model
+
+
+executeAI : GameInfo -> GameInfo
+executeAI gameInfo =
+    let
+        addCardsToRoute numberOfCards playerIndex gameInfo2 =
+            case numberOfCards of
+                0 ->
+                    gameInfo2
+
+                _ ->
+                    addCardsToRoute (numberOfCards - 1)
+                        playerIndex
+                        { gameInfo2
+                            | players =
+                                updatePlayerInPlayers playerIndex
+                                    (\player ->
+                                        let
+                                            ( cardIndex, newAI ) =
+                                                case player.ai of
+                                                    Just seed ->
+                                                        Random.step (Random.int 0 (Array.length player.hand - 1)) seed |> Tuple.mapSecond Just
+
+                                                    Nothing ->
+                                                        ( -1, Nothing )
+                                        in
+                                        { player
+                                            | hand = Array.Extra.removeAt cardIndex player.hand
+                                            , cardsToRoute = Maybe.Extra.unwrap player.cardsToRoute (\card -> Array.push card player.cardsToRoute) (Array.get cardIndex player.hand)
+                                            , ai = newAI
+                                        }
+                                    )
+                                    gameInfo2.players
+                        }
+
+        addCardToSharedPile playerIndex gameInfo2 =
+            let
+                newPlayers =
+                    updatePlayerInPlayers playerIndex
+                        (\player ->
+                            let
+                                ( cardIndex, newAI ) =
+                                    case player.ai of
+                                        Just seed ->
+                                            Random.step (Random.int 0 (Array.length player.hand - 1)) seed |> Tuple.mapSecond Just
+
+                                        Nothing ->
+                                            ( -1, Nothing )
+                            in
+                            { player
+                                | hand = Array.Extra.removeAt cardIndex player.hand
+                                , selectedHandCardIndex = Just cardIndex
+                                , ai = newAI
+                            }
+                        )
+                        gameInfo2.players
+            in
+            { gameInfo2
+                | players =
+                    updatePlayerInPlayers playerIndex
+                        (\player ->
+                            { player
+                                | selectedHandCardIndex = Nothing
+                                , hand =
+                                    case player.selectedHandCardIndex of
+                                        Just cardIndex ->
+                                            Array.Extra.removeAt cardIndex player.hand
+
+                                        Nothing ->
+                                            player.hand
+                            }
+                        )
+                        newPlayers
+                , sharedPileCard = getSelectedCardFromPlayersHand playerIndex newPlayers
+            }
+
+        executeInTurn playerIndex =
+            gameInfo
+                |> addCardsToRoute 1 playerIndex
+                |> addCardToSharedPile playerIndex
+                |> endTurn
+
+        executeSharedPileCardTurn playerIndex =
+            case gameInfo.sharedPileCard of
+                Just card ->
+                    case card of
+                        DrawCard numberCardsToDraw ->
+                            gameInfo
+                                |> addCardsToRoute numberCardsToDraw playerIndex
+                                |> endTurn
+
+                        _ ->
+                            gameInfo
+
+                Nothing ->
+                    gameInfo
+    in
+    case gameInfo.roundState of
+        NextPlayerInTurn playerIndex ->
+            executeInTurn playerIndex
+
+        PlayerInTurn playerIndex ->
+            executeInTurn playerIndex
+
+        RevealSharedPileCardNextPlayerInTurn playerIndex ->
+            executeSharedPileCardTurn playerIndex
+
+        RevealSharedPileCardPlayerInTurn playerIndex ->
+            executeSharedPileCardTurn playerIndex
+
+        _ ->
+            gameInfo
+
+
 getCardValue : Card -> Int
 getCardValue card =
     case card of
@@ -183,20 +378,20 @@ cardGenerator =
 initGame : StartInfo -> Seed -> GameInfo
 initGame startInfo seed =
     let
-        numCards =
-            10
+        generateAISeeds =
+            Random.list (List.length startInfo.players) Random.independentSeed
 
-        createDrawDeck =
-            Random.list (numCards * List.length startInfo.players) cardGenerator
-
-        ( drawDeck, newSeed ) =
-            Random.step createDrawDeck seed
-
-        takeCards index deck =
-            Array.fromList <| List.take numCards <| List.drop (numCards * index) deck
+        ( aiSeeds, newSeed ) =
+            Random.step generateAISeeds seed
+                |> Tuple.mapFirst Array.fromList
 
         players =
-            Array.fromList <| List.map (\name -> Player name 0 Array.empty Array.empty Nothing Array.empty) startInfo.players
+            Array.fromList <|
+                List.indexedMap
+                    (\index ( name, isAI ) ->
+                        Player name 0 Array.empty Array.empty Nothing Array.empty (Bool.Extra.ifElse (Array.get index aiSeeds) Nothing isAI)
+                    )
+                    startInfo.players
     in
     GameInfo players 0 0 (NextPlayerInTurn 0) Array.empty Nothing 0 newSeed
         |> fillPlayersHand
