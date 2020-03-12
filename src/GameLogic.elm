@@ -217,7 +217,29 @@ fillPlayersHand gameInfo =
         takeCards index deck =
             Array.fromList <| List.take numCards <| List.drop (numCards * index) deck
 
+        sortCards =
+            \cards -> cards |> Array.toList |> List.sortBy getCardOrder |> Array.fromList
+
         newPlayers =
-            Array.indexedMap (\index player -> { player | hand = Array.append player.hand (takeCards index drawDeck) }) gameInfo.players
+            Array.indexedMap (\index player -> { player | hand = sortCards (Array.append player.hand (takeCards index drawDeck)) }) gameInfo.players
     in
     { gameInfo | players = newPlayers, randomnessSeed = newSeed }
+
+
+getCardOrder : Card -> Int
+getCardOrder card =
+    case card of
+        Speed value ->
+            value
+
+        Minus50 ->
+            140
+
+        ServiceStation ->
+            130
+
+        DrawCard amount ->
+            140 + amount
+
+        Discard ->
+            150
