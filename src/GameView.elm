@@ -74,7 +74,7 @@ viewCardImage card highlighted showBack onClickHandler =
                     Discard ->
                         "-discard"
     in
-    img ([ src ("svg/card" ++ imageFileName ++ ".png"), width (Tuple.first cardSize) ] ++ highlightedAttributes ++ onClickHandler) []
+    img ([ src ("images/card" ++ imageFileName ++ ".png"), width (Tuple.first cardSize) ] ++ highlightedAttributes ++ onClickHandler) []
 
 
 emptyCardView handlers =
